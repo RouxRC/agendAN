@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# TODO:
+# - finish fields
+# - save as csv
+# - save as ical
+# - add dow/hours/legislature fields
+# - calendar viz
+
 import os, json
 
 def datize(d):
