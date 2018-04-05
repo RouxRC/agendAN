@@ -1,20 +1,72 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-with open('AMO10_deputes_actifs_mandats_actifs_organes_XIV.json') as f:
+import os, json
+
+def datize(d):
+    return d
+
+def parse_session(s):
+    return s
+
+def parse_num_seance(n):
+    return n
+
+def parse_presences(r, typ):
+    return "|".join([p["acteurRef"] for p in ((r.get("participants") or {}).get("participantsInternes") or {}).get("participantInterne", []) if p["presence"] == typ])
+
+def parse_auditionnes(r):
+    return "|".join(["%s %s %s (%s)" % (p["ident"]["civ"], p["ident"]["prenom"], p["ident"]["nom"], p["dateNais"]) for p in ((r.get("participants") or {}).get("personnesAuditionnees") or {}).get("personneAuditionnee", [])]),
+
+# - ODJ             7644  => uniq([convocationODJ.item] + [objet for p in pointsODJ.pointODJ] + ["\n".join(resumeODJ.item)])
+def parse_ODJ(o):
+    pass
+
+with open(os.path.join('data', 'AMO10_deputes_actifs_mandats_actifs_organes_XIV.json')) as f:
     orgas = {o["uid"]: o for o in json.load(f)['export']['organes']['organe']}
 
-with open('Agenda_XV.json') as f:
-    a = json.load(f)['reunions']['reunion']
-len(a)
+with open(os.path.join('data', 'Agenda_XV.json')) as f:
+    reunions = []
+    for r in json.load(f)['reunions']['reunion']:
+        # Assemble complementary fields
+        if "organe" in r:
+            o = r.pop("organe")
+            r["organeReuniRef"] = o["organeRef"]
+        if "demandeurs" not in r or not r["demandeurs"]:
+            r["demandeurs"] = {"acteur": [{"nom": d["acteurNom"], "acteurRef": d.get("acteurRef")} for d in [r.get("demandeur")] if d]}
+        # Homogeneize fields containing both arrays or single object
+        elif type(r["demandeurs"].get("acteur")) == dict:
+            r["demandeurs"]["acteur"] = [r["demandeurs"]["acteur"]]
+        if type(((r.get("participants") or {}).get("personnesAuditionnees") or {}).get("personneAuditionnee")) == dict:
+            r["participants"]["personnesAuditionnees"]["personneAuditionnee"] = [r["participants"]["personnesAuditionnees"]["personneAuditionnee"]]
+
+        # Skip unconfirmed
+        if r.get('cycleDeVie', {}).get('etat', r.get('statut')).lower() != u'confirmé':
+            continue
+
+        # Skip Hémicycle Sénat
+        if r.get("organeReuniRef") == "PO78718":
+            continue
+
+        reunions.append({
+            "debut":            datize(r["timeStampDebut"]),
+            "fin":              datize(r.get("timeStampFin")),
+            "lieu":             r["lieu"].get("libelleCourt", r["lieu"]["libelleLong"]),
+            "type":             r.get("typeReunion") or orgas.get(r["organeReuniRef"], {}).get("codeType"),
+            "organe":           orgas.get(r.get("organeReuniRef"), {}).get("libelle"),
+            "organe_demandeur": orgas.get(r["demandeurs"].get("organe", {}).get("organeRef"), {}).get("libelle"),
+            "demandeurs":       "|".join([a["nom"] for a in r["demandeurs"].get("acteur", [])]),
+            "ouverture_presse": r.get("ouverturePresse"),
+            "session":          parse_session(r.get("sessionRef")),
+            "titre":            parse_num_seance((r.get("identifiants") or {}).get("quantieme")),
+            "presents":         parse_presences(r, u"présent"),
+            "absents":          parse_presences(r, u"absent"),
+            "excuses":          parse_presences(r, u"excusé"),
+            "auditionnes":      parse_auditionnes(r),
+            "ordre_du_jour":    parse_ODJ(r.get("ODJ"))
+        })
+
 # TOTAL                                         39360
-
-keys = []
-for b in a:
-    keys += b.keys()
-keys = sorted(list(set(keys)))
-keytypes = {v: type([b for b in a if b.get(v)][0].get(v)) for v in keys}
-
-c = [b for b in a if b.get('cycleDeVie', {}).get('etat', b.get('statut')).lower() == 'confirm\xe9']
-len(c)
 # Confirmés                                     32341 = 7644 + 24697
 #
 # - organeReuniRef = {                          9385
@@ -31,17 +83,3 @@ len(c)
 #   "DEP":  "Réunions individuelles"            22970
 # }
 #
-# FIELDS
-# - identifiants    2026  => quantieme = numéro séance for hémicycle
-# - lieu            32341 => libelleLong/?code/?libelleCourt
-# - ODJ             7644  => uniq([convocationODJ.item] + [p.objet for p in pointsODJ.pointODJ] + ["\n".join(resumeODJ.item)])
-# - demandeur       7856  => acteurNom/?acteurRef
-# - demandeurs      24485 => acteur.(nom/acteurRef or array of nom/acteurRef) or organe.(nom/organeRef)
-# - participants    7644  => presences = [presence/acteurRef for p in participantsInternes.participantInterne] + auditionnes = [personnesAuditionnees.personneAuditionnee = dict or array of dict ident.civ/ident.prenom/ident.nom/dateNais]
-# - organe          18    => if not organeReuniRef try get('organe').get('organeRef')
-# - organeReuniRef  32129
-# - ouverturePresse 7644
-# - sessionRef      7644
-# - timeStampDebut  32341
-# - timeStampFin    31744
-# - typeReunion	    24697
