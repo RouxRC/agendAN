@@ -8,7 +8,7 @@
 # - add dow/hours/legislature fields
 # - calendar viz
 
-import os, json
+import os, sys, json
 
 def datize(d):
     return d
@@ -29,12 +29,18 @@ def parse_auditionnes(r):
 def parse_ODJ(o):
     pass
 
-with open(os.path.join('data', 'AMO10_deputes_actifs_mandats_actifs_organes_XIV.json')) as f:
-    orgas = {o["uid"]: o for o in json.load(f)['export']['organes']['organe']}
+def read_orgas(leg):
+    with open(os.path.join('data', 'AMO10_deputes_actifs_mandats_actifs_organes_%s.json' % leg)) as f:
+        return {o["uid"]: o for o in json.load(f)['export']['organes']['organe']}
 
-with open(os.path.join('data', 'Agenda_XV.json')) as f:
+def read_agenda(leg):
+    with open(os.path.join('data', 'Agenda_%s.json' % leg)) as f:
+        return json.load(f)['reunions']['reunion']
+
+def parse_reunions(leg):
+    orgas = read_orgas(leg)
     reunions = []
-    for r in json.load(f)['reunions']['reunion']:
+    for r in read_agenda(leg):
         # Assemble complementary fields
         if "organe" in r:
             o = r.pop("organe")
@@ -72,6 +78,14 @@ with open(os.path.join('data', 'Agenda_XV.json')) as f:
             "auditionnes":      parse_auditionnes(r),
             "ordre_du_jour":    parse_ODJ(r.get("ODJ"))
         })
+    return reunions
+
+if __name__ == "__main__":
+    leg = sys.argv[1] if len(sys.argv) > 1 else "XV"
+    reunions = parse_reunions(leg)
+    with open(os.path.join('data', 'reunions-%s.json' % leg), 'w') as f:
+        f.write(json.dumps(reunions, ensure_ascii=False, indent=1).encode('utf-8'))
+
 
 # TOTAL                                         39360
 # Confirmés                                     32341 = 7644 + 24697
